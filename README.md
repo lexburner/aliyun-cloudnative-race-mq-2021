@@ -28,7 +28,7 @@ Apache RocketMQ作为的一款分布式的消息中间件，历年双十一承�
   读接口
 
     -Map<Integer, ByteBuffer> getRange(String topic, int queueId, long offset, int fetchNum)
-    -返回的 Map<offset, bytebuffer> 中 offset 为消息在调用写接口时返回的值
+    -返回的 Map<offset, bytebuffer> 中 offset 为消息在 Map 中的顺序偏移，从0开始
       
     例子：
       
@@ -39,7 +39,7 @@ Apache RocketMQ作为的一款分布式的消息中间件，历年双十一承�
       Map{"0": "2021", "1": "2021"}
 
       getRange(b, 1001, 1, 2)
-      Map{"1": "2021"}
+      Map{"0": "2021"}
 
   评测环境中提供128G的傲腾持久内存，鼓励选手用其提高性能。
 
@@ -90,8 +90,6 @@ JAVA
 我们会对排名靠前的代码进行review，如果发现大量拷贝别人的代码，将酌情扣减名次。
 
 所有消息都应该进行按实际发送的信息进行存储，不可以压缩，不能伪造。
-
-消息的存储实现中必须使用傲腾持久内存，否则程序无效。
 
 程序不能针对数据规律进行针对性优化, 所有优化必须符合随机数据的通用性。
 

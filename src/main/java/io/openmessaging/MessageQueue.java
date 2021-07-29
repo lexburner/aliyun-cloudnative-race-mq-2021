@@ -17,7 +17,7 @@ public abstract class MessageQueue {
 
     /**
      * 读取某个范围内的信息；
-     * 返回值中的key为offset，value为对应的写入data。读到结尾处没有新数据了，要求返回null。
+     * 返回值中的key为消息在Map中的偏移，从0开始，value为对应的写入data。读到结尾处没有新数据了，要求返回null。
      * @param topic topic的值
      * @param queueId topic下队列的id
      * @param offset 写入消息时返回的offset
