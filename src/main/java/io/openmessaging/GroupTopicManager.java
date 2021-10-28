@@ -11,6 +11,11 @@ import java.util.concurrent.TimeUnit;
 /**
  * @author jingfeng.xjf
  * @date 2021/9/15
+ *
+ * topic 管理器
+ * 一个 ThreadGroupManager 逻辑管理 m 个线程
+ * 一个线程持有 n 个 GroupTopicManager
+ * 一个 GroupTopicManager 一定只对应一个 ThreadGroupManager
  */
 public class GroupTopicManager {
 
@@ -31,9 +36,9 @@ public class GroupTopicManager {
 //    public int[] queueCategory;
 
     public int topicNo;
-    private List<OffsetAndLen>[] queue2index2Offset;
+    private final List<OffsetAndLen>[] queue2index2Offset;
     private FileChannel dataFileChannel;
-    private Semaphore[] semaphores;
+    private final Semaphore[] semaphores;
 
     public GroupTopicManager(int topicNo) {
         this.topicNo = topicNo;

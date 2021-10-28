@@ -7,6 +7,8 @@ import sun.nio.ch.DirectBuffer;
 /**
  * @author jingfeng.xjf
  * @date 2021/10/11
+ *
+ * Unsafe 封装的 ByteBuffer，可以用于替代 DirectByteBuffer
  */
 public class NativeMemoryByteBuffer {
 

@@ -12,20 +12,46 @@ import java.util.concurrent.Semaphore;
 /**
  * @author jingfeng.xjf
  * @date 2021/9/22
+ *
+ * AEP 管理器，
+ * AepManager 核心思想：使用滑动窗口的思想进行缓存管理
+ * writeBuffer 有两层作用：
+ * 1. 作为 AEP 聚合刷盘的写入缓冲
+ * 2. 作为热数据的 dram 缓存
  */
 public class AepManager {
 
     private final FileChannel fileChannel;
+    /**
+     * AEP 写入缓冲 & DRAM 热读缓存 的大小
+     */
     private final int writeBufferSize;
-    //private final ByteBuffer writeBuffer;
+    /**
+     * AEP 写入缓冲 & DRAM 热读缓存
+     */
     private final NativeMemoryByteBuffer writeBuffer;
+    /**
+     * AEP 滑动窗口的大小
+     */
     private final long windowSize;
+    /**
+     * 提前将 Runtime 需要用到的索引对象分配好
+     */
     private final OffsetAndLen[] offsetAndLens;
-    private final ExecutorService ssdReadExecutorService;
-    public long globalPosition;
-    public long writeBufferPosition;
-    public long skipSize;
     private int offsetAndLenIndex = 0;
+    /**
+     * getRange 阶段，ssd 可以并发读
+     */
+    private final ExecutorService ssdReadExecutorService;
+    /**
+     * AEP 的逻辑长度
+     */
+    public long globalPosition;
+    /**
+     * DRAM 热读缓存的逻辑长度
+     */
+    public long writeBufferPosition;
+
 
     public AepManager(String id, int writeBufferSize, long aepWindowSize) {
         try {
@@ -36,9 +62,7 @@ public class AepManager {
             this.windowSize = aepWindowSize;
             this.globalPosition = 0;
             this.writeBufferPosition = 0;
-            this.skipSize = 0;
             this.writeBufferSize = writeBufferSize;
-            //this.writeBuffer = ByteBuffer.allocateDirect(writeBufferSize);
             this.writeBuffer = new NativeMemoryByteBuffer(writeBufferSize);
             String path = Constants.AEP_BASE_PATH + "/" + id;
             File file = new File(path);
@@ -48,6 +72,7 @@ public class AepManager {
             this.fileChannel = FileChannel.open(file.toPath(), StandardOpenOption.READ,
                     StandardOpenOption.WRITE);
 
+            // 预分配
             Util.preAllocateFile(this.fileChannel, Constants.THREAD_AEP_HOT_CACHE_PRE_ALLOCATE_SIZE);
 
             ssdReadExecutorService = Executors.newFixedThreadPool(8);
@@ -57,8 +82,6 @@ public class AepManager {
     }
 
     public long write(ByteBuffer data) {
-        skipSize += data.remaining();
-
         try {
             // 待写入数据的大小
             int len = data.remaining();
@@ -109,6 +132,9 @@ public class AepManager {
         }
     }
 
+    /**
+     * 不方便同时返回 aepPosition 和 writeBufferPosition，单独提供该方法作为一个折中
+     */
     public long getWriteBufferPosition() {
         return writeBufferPosition;
     }

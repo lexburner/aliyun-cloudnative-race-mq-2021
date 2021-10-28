@@ -11,13 +11,21 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+/**
+ * 程序的主入口
+ */
 public class DefaultMessageQueueImpl extends MessageQueue {
 
+    private final Lock lock = new ReentrantLock();
+    private final Condition condition = lock.newCondition();
+
+    private final ThreadLocal<Boolean> firstAppend = ThreadLocal.withInitial(() -> true);
+
+    private final AtomicInteger threadNum = new AtomicInteger(0);
+
+    private final AtomicInteger messageNum = new AtomicInteger(0);
+
     public DefaultMessageQueueImpl() {
-
-        long start = System.currentTimeMillis();
-
-        ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
 
         Util.printParams();
 
@@ -33,22 +41,15 @@ public class DefaultMessageQueueImpl extends MessageQueue {
                 Constants.THREAD_COLD_READ_BUFFER_SIZE);
         }
 
-        for (int i = 0; i < Constants.MAX_GROUPS; i++) {
-            // 注意这里所有的 GroupManager 都持有相同的 groupTopicManagers 数组，以便于访问任意一个 topic
+        for (int i = 0; i < Constants.GROUPS; i++) {
             Context.threadGroupManagers[i] = new ThreadGroupManager(i);
         }
 
-        System.out.println("preallocate cost " + (System.currentTimeMillis() - start) + " ms");
-
-        scheduledExecutorService.scheduleAtFixedRate(() -> {
-            Util.analysisMemory();
-        }, 60, 10, TimeUnit.SECONDS);
+        ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor();
+        scheduledExecutorService.scheduleAtFixedRate(Util::analysisMemory, 60, 10, TimeUnit.SECONDS);
 
         // 统计命中率
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            System.out.println("shutdown shook invoke");
-            analysisHitCache();
-        }));
+        Runtime.getRuntime().addShutdownHook(new Thread(this::analysisHitCache));
 
         // 防止程序卡死
         scheduledExecutorService.schedule(() -> {
@@ -56,27 +57,7 @@ public class DefaultMessageQueueImpl extends MessageQueue {
             System.exit(0);
         }, 445, TimeUnit.SECONDS);
 
-        startTime = System.currentTimeMillis();
     }
-
-    private void analysisHitCache() {
-        long totalSize = 0;
-        System.out.println(new Date() + " totalNum: " + messageNum.get() + " " + Util.byte2M(totalSize) + "M");
-        System.out.println("=== message num: "
-            + Context.heapDram.get() + " "
-            + Context.ssd.get() + " "
-            + Context.aep.get() + " "
-            + Context.directDram.get()
-        );
-    }
-
-    private final ThreadLocal<Boolean> firstAppend = ThreadLocal.withInitial(() -> true);
-
-    private AtomicInteger threadNum = new AtomicInteger(0);
-
-    private AtomicInteger messageNum = new AtomicInteger(0);
-
-    long startTime;
 
     @Override
     public long append(String topic, int queueId, ByteBuffer data) {
@@ -88,12 +69,14 @@ public class DefaultMessageQueueImpl extends MessageQueue {
         int topicNo = Util.parseInt(topic);
 
         // 获取该 topic-queueId 下的最大位点 offset
-        long offset = Context.threadGroupManager.get().append(topicNo, queueId, data);
-        return offset;
+        return Context.threadGroupManager.get().append(topicNo, queueId, data);
     }
 
-    Lock lock = new ReentrantLock();
-    Condition condition = lock.newCondition();
+    @Override
+    public Map<Integer, ByteBuffer> getRange(String topic, int queueId, long offset, int fetchNum) {
+        int topicNo = Util.parseInt(topic);
+        return Context.groupTopicManagers[topicNo].getRange(queueId, (int)offset, fetchNum);
+    }
 
     private void initThread() {
         lock.lock();
@@ -125,40 +108,15 @@ public class DefaultMessageQueueImpl extends MessageQueue {
 
     }
 
-    //private void initThread() {
-    //    threadNum.incrementAndGet();
-    //    // 确保统计到所有线程
-    //    try {
-    //        Thread.sleep(100);
-    //    } catch (InterruptedException e) {
-    //        e.printStackTrace();
-    //    }
-    //    int groupNum = Constants.GROUPS;
-    //    if (threadNum.get() != 40) {
-    //        if (Constants.INTERRUPT_INCORRECT_PHASE) {
-    //            throw new RuntimeException("INTERRUPT_INCORRECT_PHASE");
-    //        }
-    //        groupNum = threadNum.get();
-    //    }
-    //    firstAppend.set(false);
-    //    int bucketNo = (int)(Thread.currentThread().getId() % groupNum);
-    //    Context.threadGroupManager.set(Context.threadGroupManagers[bucketNo]);
-    //    Context.threadGroupManagers[bucketNo].joinGroup();
-    //    // 确保所有线程都加入了 group
-    //    try {
-    //        Thread.sleep(100);
-    //    } catch (InterruptedException e) {
-    //        e.printStackTrace();
-    //    }
-    //}
-
-    @Override
-    public Map<Integer, ByteBuffer> getRange(String topic, int queueId, long offset, int fetchNum) {
-        int topicNo = Util.parseInt(topic);
-
-        Map<Integer, ByteBuffer> ret = Context.groupTopicManagers[topicNo].getRange(queueId, (int)offset, fetchNum);
-
-        return ret;
+    private void analysisHitCache() {
+        long totalSize = 0;
+        System.out.println(new Date() + " totalNum: " + messageNum.get() + " " + Util.byte2M(totalSize) + "M");
+        System.out.println("=== message num: "
+            + Context.heapDram.get() + " "
+            + Context.ssd.get() + " "
+            + Context.aep.get() + " "
+            + Context.directDram.get()
+        );
     }
 
 }

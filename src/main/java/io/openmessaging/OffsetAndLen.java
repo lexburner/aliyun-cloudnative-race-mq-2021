@@ -3,6 +3,8 @@ package io.openmessaging;
 /**
  * @author jingfeng.xjf
  * @date 2021/9/10
+ *
+ * 多级索引
  */
 public class OffsetAndLen {
 

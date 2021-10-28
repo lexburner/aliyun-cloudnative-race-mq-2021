@@ -5,6 +5,8 @@ import java.nio.ByteBuffer;
 /**
  * @author jingfeng.xjf
  * @date 2021/9/29
+ *
+ * 定长的 dram 缓存，理论上可以复用，但这个版本没有复用
  */
 public class FixedLengthDramManager {
 

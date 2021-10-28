@@ -13,13 +13,17 @@ import java.util.concurrent.locks.ReentrantLock;
 /**
  * @author jingfeng.xjf
  * @date 2021/9/15
+ *
+ * 聚合多个线程数据写入的管理器
+ *
+ * 核心思想：将 40 个线程分成 4 组，每组 10 个线程，聚合写入之后，等待最后一个线程一同 force，同时返回
  */
 public class ThreadGroupManager {
 
-    private Lock lock;
-    private Condition condition;
+    private final Lock lock;
+    private final Condition condition;
 
-    private NativeMemoryByteBuffer writeBuffer;
+    private final NativeMemoryByteBuffer writeBuffer;
     public FileChannel fileChannel;
     private volatile int count = 0;
     private volatile int total = 0;
@@ -27,7 +31,6 @@ public class ThreadGroupManager {
     public ThreadGroupManager(int groupNo) {
         this.lock = new ReentrantLock();
         this.condition = this.lock.newCondition();
-        //this.writeBuffer = ByteBuffer.allocateDirect(Constants.MAX_ONE_DATA_SIZE * Constants.NUMS_PERHAPS_IN_GROUP);
         this.writeBuffer = new NativeMemoryByteBuffer(Constants.MAX_ONE_DATA_SIZE * Constants.NUMS_PERHAPS_IN_GROUP);
         try {
             String dataFilePath = Constants.ESSD_BASE_PATH + "/" + groupNo;
@@ -38,6 +41,7 @@ public class ThreadGroupManager {
             this.fileChannel = FileChannel.open(dataFile.toPath(), StandardOpenOption.READ,
                 StandardOpenOption.WRITE);
 
+            // recover
             if (this.fileChannel.size() > 0) {
                 ByteBuffer idxWriteBuffer = ByteBuffer.allocate(Constants.IDX_GROUP_BLOCK_SIZE);
                 long offset = 0;
@@ -73,10 +77,6 @@ public class ThreadGroupManager {
         }
     }
 
-    public synchronized void joinGroup() {
-        total++;
-    }
-
     public void setTotal(int total) {
         this.total = total;
     }
@@ -90,8 +90,10 @@ public class ThreadGroupManager {
         long aepPosition = -1;
         long writeBufferPosition = -1;
 
+        // 优先使用 DRAM 缓存
         int coldCachePosition = fixedLengthDramManager.write(data);
         if (coldCachePosition == -1) {
+            // 使用 AEP 缓存
             aepPosition = aepManager.write(data);
             writeBufferPosition = aepManager.getWriteBufferPosition() - len;
         }
@@ -109,14 +111,12 @@ public class ThreadGroupManager {
             writeBuffer.put(data);
 
             if (count != total) {
-                boolean await = condition.await(10, TimeUnit.SECONDS);
-                if (!await) {
-                    System.out.println(new Date() + " " + "await > 1s");
-                    Util.analysisMemoryOnce();
-                }
+                condition.await(10, TimeUnit.SECONDS);
             } else {
+                // 最后一个线程触发 force 刷盘
                 force();
                 count = 0;
+                // 通知其他线程放行
                 condition.signalAll();
             }
         } catch (Exception e) {
@@ -124,11 +124,9 @@ public class ThreadGroupManager {
         } finally {
             lock.unlock();
         }
-        // 索引需要存入内存中
-        long ret = Context.groupTopicManagers[topicNo].append(queueId, ssdPosition, aepPosition, writeBufferPosition,
-            coldCachePosition, len, fileChannel);
         // 需要返回 queue 的长度
-        return ret;
+        return Context.groupTopicManagers[topicNo].append(queueId, ssdPosition, aepPosition, writeBufferPosition,
+            coldCachePosition, len, fileChannel);
     }
 
     private void force() {

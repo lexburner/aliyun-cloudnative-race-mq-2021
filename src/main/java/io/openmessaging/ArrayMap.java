@@ -8,6 +8,8 @@ import java.util.Set;
 /**
  * @author jingfeng.xjf
  * @date 2021/9/16
+ *
+ * HashMap 的数组实现版本
  */
 public class ArrayMap implements Map<Integer, ByteBuffer> {
 
